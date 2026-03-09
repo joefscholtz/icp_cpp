@@ -32,7 +32,7 @@ just build
 Run
 
 ```bash
-./build/icp_app
+./build/app/icp_app
 ```
 
 Or with just

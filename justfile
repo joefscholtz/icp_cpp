@@ -18,4 +18,4 @@ build: configure
   cmake --build --preset default --parallel
 
 run:
-  ./build/icp_app
+  ./build/app/icp_app
