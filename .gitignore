@@ -1,2 +1,4 @@
 build/
 .polyscope.ini
+compile_commands.json
+.cache

@@ -14,14 +14,14 @@ Clone de repo and its submodules
 git clone --recurse-submodules git@github.com:joefscholtz/icp_cpp.git
 ```
 
-Build the project manually
+First, bootstrap vcpkg to find the dependencies. In Windows, run `<project_path>\3rd_party\vcpkg\bootstrap-vcpkg.bat`, or in Linux/MacOs `<project_path>/3rd_party/vcpkg/bootstrap-vcpkg.sh`. Then build the project manually
 
 ```bash
 cmake --preset default
 cmake --build --preset default --parallel
 ```
 
-Or with just
+or with just
 
 ```bash
 just build
@@ -35,7 +35,7 @@ Run
 ./build/app/icp_app
 ```
 
-Or with just
+or with just
 
 ```bash
 just run

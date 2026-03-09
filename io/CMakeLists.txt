@@ -1,4 +1,4 @@
-add_library(oi STATIC
+add_library(io STATIC
     src/main.cpp
 )
 target_include_directories(io 
