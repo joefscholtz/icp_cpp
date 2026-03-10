@@ -6,6 +6,10 @@
 - Ninja
 - just (Optional)
 
+### Linux Dependencies
+
+autoconf autoconf-archive automake libtool
+
 ## Build
 
 Clone de repo and its submodules

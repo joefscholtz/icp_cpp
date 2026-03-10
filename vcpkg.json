@@ -1,6 +1,9 @@
 {
   "name": "icpcpp",
   "dependencies": [
-      "eigen3"
+    "eigen3",
+    "happly",
+    "tinyobjloader",
+    "nativefiledialog-extended"
   ]
 }
