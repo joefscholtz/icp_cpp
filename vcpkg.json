@@ -1,5 +1,5 @@
 {
-  "name": "icp_cppvcpkg search ",
+  "name": "icpcpp",
   "dependencies": [
       "eigen3"
   ]
