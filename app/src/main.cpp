@@ -1,12 +1,10 @@
+#include "io.hpp"
 #include "polyscope/point_cloud.h"
 #include "polyscope/polyscope.h"
+#include <Eigen/Core>
 #include <iostream>
 #include <nfd.hpp>
 #include <vector>
-
-struct Point3D {
-  float x, y, z;
-};
 
 const char *corrMethods[] = {"Naive (Brute Force)", "KD-Tree"};
 static int selectedCorr = 0;
@@ -15,7 +13,7 @@ const char *miniMethods[] = {"Point-to-Point (SVD)", "Point-to-Point (LS)", "Poi
 static int selectedMini = 0;
 
 void ICPSettingsCallback() {
-  ImGui::Begin("ICP Settings");
+  ImGui::Begin("ICP");
 
   if (ImGui::Button("Select Source Mesh")) {
     NFD_Init();
@@ -27,6 +25,12 @@ void ICPSettingsCallback() {
 
     if (result == NFD_OKAY) {
       std::cout << "Selected: " << outPath << std::endl;
+      auto points = loadMesh(outPath);
+      auto *pc = polyscope::registerPointCloud("Source Cloud", points);
+
+      pc->setPointRadius(0.001);
+      pc->setPointColor({1.0f, 0.0f, 0.0f}); // RGB
+      //
       NFD_FreePath(outPath); // Clean up
     }
 
@@ -61,16 +65,6 @@ void mainCallback() { ICPSettingsCallback(); }
 int main(int argc, char **argv) {
   polyscope::init();
   polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
-
-  std::vector<Point3D> points = {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
-                                 {1.0f, 1.0f, 0.0f}, {0.5f, 0.5f, 1.0f}, {0.2f, 0.8f, 0.3f}};
-
-  auto *pc = polyscope::registerPointCloud("Source Cloud", points);
-
-  pc->setPointRadius(0.01);
-  pc->setPointColor({1.0f, 0.0f, 0.0f}); // RGB
-
-  std::cout << "Polyscope initialized. Press 'q' in the window to exit." << std::endl;
 
   polyscope::options::openImGuiWindowForUserCallback = false;
 
