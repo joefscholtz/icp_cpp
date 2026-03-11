@@ -12,8 +12,8 @@
 #include <vector>
 
 struct ICPResult {
-  Eigen::Matrix4d T; // Homogeneous Transformation
-  double chi;        // Residual Error
+  Eigen::Matrix4d T{Eigen::Matrix4d::Identity()}; // Homogeneous Transformation
+  double chi{0};                                  // Residual Error
 };
 
 using MinimizationFunctionType =

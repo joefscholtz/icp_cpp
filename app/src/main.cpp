@@ -12,7 +12,7 @@
 #include <optional>
 #include <vector>
 
-std::shared_ptr<ICPDuration> icp_duration;
+std::shared_ptr<ICPDuration> icp_duration = std::make_shared<ICPDuration>();
 ICPResult icp_res;
 
 CorrespondenceFunctionType correspondence_fn;
@@ -95,8 +95,8 @@ void ICPSettingsCallback() {
       minimization_fn = minimize_point_to_point_svd;
     }
     if (point_clouds.size() > 1) {
-      icp_duration = std::make_shared<ICPDuration>();
       icp_res = icp(point_clouds[0], point_clouds[1], correspondence_fn, minimization_fn, std::nullopt, std::nullopt, icp_duration, icp_iterations);
+      // icp_res = icp(point_clouds[0], point_clouds[1], correspondence_fn, minimization_fn, std::nullopt, std::nullopt, nullptr, icp_iterations);
       auto P_curr = transform_vector_points(point_clouds[0], icp_res.T.block<3, 3>(0, 0), icp_res.T.block<3, 1>(0, 3));
       polyscope::registerPointCloud("Source Cloud", P_curr);
     }
@@ -104,7 +104,7 @@ void ICPSettingsCallback() {
 
   ImGui::Text("Correspondence function mean duration %.3f ms", icp_duration->correspondence_duration * 1000.0);
   ImGui::Text("Minimization function mean duration %.3f ms", icp_duration->minimization_duration * 1000.0);
-  ImGui::Text("Current RMSE: %.6f", 0.00234);
+  ImGui::Text("Current RMSE: %.6f", icp_res.chi);
   ImGui::End();
 }
 
