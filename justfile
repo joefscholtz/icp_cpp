@@ -16,6 +16,7 @@ configure:
 
 build: configure
   cmake --build --preset default --parallel
+  ln -sf build/compile_commands.json .
 
 run:
-  ./build/icp_app
+  ./build/app/icp_app

@@ -8,7 +8,9 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/3rd_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/external/vcpkg/scripts/buildsystems/vcpkg.cmake"
       }
     }
   ],
