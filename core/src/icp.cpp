@@ -56,3 +56,19 @@ auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3
 
   return {.T = T, .chi = min_result.chi};
 }
+
+auto frame_to_frame_icp(std::vector<std::vector<Eigen::Vector3d>> &point_clouds, CorrespondenceFunctionType &correspondence_fn,
+                        MinimizationFunctionType &minimization_fn, std::optional<VisualizationFunctionType> visualization_fn,
+                        std::optional<const Eigen::Matrix4d> T0, std::shared_ptr<ICPDuration> icp_duration, const size_t iterations = 20)
+    -> ICPResult {
+
+  ICPResult curr_icp;
+  Eigen::Matrix4d T = T0.value_or(Eigen::Matrix4d::Identity());
+  for (size_t i = 0; i < point_clouds.size() - 1; i++) {
+    auto P = point_clouds[i];
+    auto Q = point_clouds[i + 1];
+    curr_icp = icp(P, Q, correspondence_fn, minimization_fn, visualization_fn, T, icp_duration, iterations);
+    T = curr_icp.T;
+  }
+  return curr_icp;
+}

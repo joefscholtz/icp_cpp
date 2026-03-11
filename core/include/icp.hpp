@@ -10,6 +10,7 @@ auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3
          MinimizationFunctionType &minimization_fn, std::optional<VisualizationFunctionType> visualization_fn,
          std::optional<const Eigen::Matrix4d> T0, std::shared_ptr<ICPDuration> icp_duration, const size_t iterations = 20) -> ICPResult;
 
-auto frame_to_frame_icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, CorrespondenceFunctionType &correspondence_fn,
+auto frame_to_frame_icp(std::vector<std::vector<Eigen::Vector3d>> &point_clouds, CorrespondenceFunctionType &correspondence_fn,
                         MinimizationFunctionType &minimization_fn, std::optional<VisualizationFunctionType> visualization_fn,
-                        std::optional<const Eigen::Matrix4d> T0, const size_t iterations) -> ICPResult;
+                        std::optional<const Eigen::Matrix4d> T0, std::shared_ptr<ICPDuration> icp_duration, const size_t iterations = 20)
+    -> ICPResult;
