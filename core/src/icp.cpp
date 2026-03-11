@@ -28,7 +28,7 @@ auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3
   for (size_t i = 0; i < iterations; i++) {
     P_curr = transform_vector_points(P, T.block<3, 3>(0, 0), T.block<3, 1>(0, 3));
 
-    correspondences = correspondence_fn(P_curr, Q, std::nullopt);
+    correspondences = correspondence_fn(P_curr, Q, corr_duration_ptr, std::nullopt);
     min_result = minimization_fn(P_curr, Q, correspondences, min_duration_ptr);
     if (tracking_time) {
       icp_duration->correspondence_duration += *corr_duration_ptr;

@@ -21,7 +21,7 @@ MinimizationFunctionType minimization_fn;
 std::vector<std::vector<Eigen::Vector3d>> point_clouds;
 std::vector<Eigen::Vector3d> points;
 
-int icp_iterations = 20;
+int icp_iterations = 10;
 bool stop_at_iter = false;
 
 const char *corrMethods[] = {"Naive (Brute Force)", "KD-Tree"};
@@ -104,7 +104,7 @@ void ICPSettingsCallback() {
 
   ImGui::Text("Correspondence function mean duration %.3f ms", icp_duration->correspondence_duration * 1000.0);
   ImGui::Text("Minimization function mean duration %.3f ms", icp_duration->minimization_duration * 1000.0);
-  ImGui::Text("Current RMSE: %.6f", icp_res.chi);
+  // ImGui::Text("Current RMSE: %.6f", icp_res.chi);
   ImGui::End();
 }
 
