@@ -1,11 +1,15 @@
-#include "icp.hpp"
 #include "correspondences.hpp"
 #include "math_utils.hpp"
 #include "minimization.hpp"
+#include <iostream>
+
+using VisualizationFunctionType =
+    std::function<void(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, std::vector<correspondence_t> &correspondences)>;
 
 auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, CorrespondenceFunctionType &correspondence_fn,
          MinimizationFunctionType &minimization_fn, std::optional<VisualizationFunctionType> visualization_fn,
          std::optional<const Eigen::Matrix4d> T0, const size_t iterations = 20) -> ICPResult {
+  std::cout << "Running icp" << std::endl;
   Eigen::Matrix4d T = T0.value_or(Eigen::Matrix4d::Identity());
 
   std::vector<Eigen::Vector3d> P_curr;
@@ -18,6 +22,10 @@ auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3
     correspondences = correspondence_fn(P_curr, Q, std::nullopt);
     min_result = minimization_fn(P_curr, Q, correspondences);
 
+    std::cout << "Computing Transform" << std::endl;
+    std::cout << "T:" << T << std::endl;
+    std::cout << "min_result.T:" << min_result.T << std::endl;
+
     T = min_result.T * T;
 
     if (visualization_fn) {
@@ -25,9 +33,7 @@ auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3
     }
   }
 
+  std::cout << "End icp" << std::endl;
+
   return {.T = T, .chi = min_result.chi};
 }
-
-auto frame_to_frame_icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, CorrespondenceFunctionType &correspondence_fn,
-                        MinimizationFunctionType &minimization_fn, std::optional<VisualizationFunctionType> visualization_fn,
-                        std::optional<const Eigen::Matrix4d> T0, const size_t iterations = 20) -> ICPResult {}

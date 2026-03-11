@@ -11,7 +11,7 @@ using correspondence_t = std::pair<size_t, size_t>;
 using CorrespondenceFunctionType = std::function<std::vector<correspondence_t>(
     const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, std::optional<double> max_dist)>;
 
-auto correspondence_nn(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, std::optional<double> max_dist)
+inline auto correspondence_nn(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, std::optional<double> max_dist)
     -> std::vector<correspondence_t> {
   std::vector<correspondence_t> correspondences;
 

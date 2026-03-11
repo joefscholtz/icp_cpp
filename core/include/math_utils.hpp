@@ -2,7 +2,7 @@
 #include <Eigen/Dense>
 #include <cstddef>
 
-auto transform_vector_points(const std::vector<Eigen::Vector3d> &P, Eigen::Matrix3d R, Eigen::Vector3d t) -> std::vector<Eigen::Vector3d> {
+inline auto transform_vector_points(const std::vector<Eigen::Vector3d> &P, Eigen::Matrix3d R, Eigen::Vector3d t) -> std::vector<Eigen::Vector3d> {
   size_t N = P.size();
   std::vector<Eigen::Vector3d> P_transformed(N);
   for (size_t i = 0; i < N; i++) {
