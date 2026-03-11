@@ -11,7 +11,7 @@ using VisualizationFunctionType =
 auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, CorrespondenceFunctionType &correspondence_fn,
          MinimizationFunctionType &minimization_fn, std::optional<VisualizationFunctionType> visualization_fn,
          std::optional<const Eigen::Matrix4d> T0, std::shared_ptr<ICPDuration> icp_duration, const size_t iterations = 20) -> ICPResult {
-  std::cout << "Running icp" << std::endl;
+  // std::cout << "Running icp" << std::endl;
   Eigen::Matrix4d T = T0.value_or(Eigen::Matrix4d::Identity());
 
   std::vector<Eigen::Vector3d> P_curr;
@@ -35,9 +35,9 @@ auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3
       icp_duration->minimization_duration += *min_duration_ptr;
     }
 
-    std::cout << "Computing Transform" << std::endl;
-    std::cout << "T:" << T << std::endl;
-    std::cout << "min_result.T:" << min_result.T << std::endl;
+    // std::cout << "Computing Transform" << std::endl;
+    // std::cout << "T:" << T << std::endl;
+    // std::cout << "min_result.T:" << min_result.T << std::endl;
 
     T = min_result.T * T;
 
@@ -52,7 +52,7 @@ auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3
     icp_duration->icp_duration = icp_duration->correspondence_duration + icp_duration->minimization_duration;
   }
 
-  std::cout << "End icp" << std::endl;
+  // std::cout << "End icp" << std::endl;
 
   return {.T = T, .chi = min_result.chi};
 }
