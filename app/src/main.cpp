@@ -28,6 +28,7 @@ struct AppState {
 
   int icp_iterations = 10;
   bool stop_at_iter = false;
+  int viz_pause_ms = 500;
 
   int selectedCorr = 0;
   int selectedMini = 0;
@@ -70,6 +71,7 @@ void ICPSettingsCallback(AppState &state) {
             pc->setPointColor({1.0f, 0.0f, 0.0f});
           else
             pc->setPointColor({0.0f, 1.0f, 0.0f});
+          pc->setMaterial("candy");
 
           NFD_PathSet_FreePath(path);
         }
@@ -82,29 +84,37 @@ void ICPSettingsCallback(AppState &state) {
   ImGui::Text("ICP Configuration");
   ImGui::Separator();
   ImGui::InputInt("Iterations", &state.icp_iterations);
+
   ImGui::Checkbox("Stop at each iteration", &state.stop_at_iter);
+  if (state.stop_at_iter) {
+    ImGui::Indent();
+    ImGui::InputInt("Pause (ms)", &state.viz_pause_ms);
+    ImGui::Unindent();
+  }
+
   ImGui::Combo("Correspondence", &state.selectedCorr, corrMethods, IM_ARRAYSIZE(corrMethods));
   ImGui::Combo("Minimization", &state.selectedMini, miniMethods, IM_ARRAYSIZE(miniMethods));
   ImGui::Separator();
 
   if (state.is_running) {
-    // Update Polyscope from the buffer
     if (state.has_new_viz_data) {
       std::lock_guard<std::mutex> lock(state.viz_mutex);
       auto *pc = polyscope::registerPointCloud("Source Cloud", state.viz_P);
 
       if (!state.viz_correspondences.empty()) {
         std::vector<glm::vec3> vectors;
+        vectors.reserve(state.viz_correspondences.size());
         for (auto &corr : state.viz_correspondences) {
           Eigen::Vector3d diff = state.point_clouds[1][corr.second] - state.viz_P[corr.first];
           vectors.emplace_back((float)diff.x(), (float)diff.y(), (float)diff.z());
         }
-        pc->addVectorQuantity("Matching Vectors", vectors);
+        auto *vQuant = pc->addVectorQuantity("Matching Vectors", vectors, polyscope::VectorType::AMBIENT);
+        vQuant->setVectorColor({0.0f, 0.0f, 1.0f});
+        vQuant->setEnabled(true);
       }
       state.has_new_viz_data = false;
     }
 
-    // Loader Animation
     float t = (float)ImGui::GetTime();
     const char *frames[] = {"[ .     ]", "[ ..    ]", "[ ...   ]", "[  ...  ]", "[   ..  ]", "[    .  ]", "[     . ]"};
     ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Running ICP %s", frames[(int)(t * 10.0f) % 7]);
@@ -122,17 +132,19 @@ void ICPSettingsCallback(AppState &state) {
       if (state.selectedMini == 0)
         state.minimization_fn = minimize_point_to_point_svd;
 
-      // Viz Callback
       std::optional<VisualizationFunctionType> viz_callback = std::nullopt;
       if (state.stop_at_iter) {
-        viz_callback = [&](const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &, std::vector<correspondence_t> &corr) {
+        // capture viz_pause_ms by value to ensure the thread has the correct number
+        int pause_val = state.viz_pause_ms;
+        viz_callback = [&state, pause_val](const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &,
+                                           std::vector<correspondence_t> &corr) {
           {
             std::lock_guard<std::mutex> lock(state.viz_mutex);
             state.viz_P = P;
             state.viz_correspondences = corr;
             state.has_new_viz_data = true;
           }
-          std::this_thread::sleep_for(500ms);
+          std::this_thread::sleep_for(std::chrono::milliseconds(pause_val));
         };
       }
 
@@ -144,7 +156,7 @@ void ICPSettingsCallback(AppState &state) {
     }
   }
 
-  if (state.icp_duration) {
+  if (state.icp_duration && state.icp_duration->icp_duration.count() > 0) {
     ImGui::Text("Correspondence: %.3f ms", state.icp_duration->correspondence_duration.count() * 1000.0);
     ImGui::Text("Minimization: %.3f ms", state.icp_duration->minimization_duration.count() * 1000.0);
   }
