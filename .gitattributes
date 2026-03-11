@@ -1,0 +1,22 @@
+# Force LF endings for all text files
+* text eol=lf
+
+# Treat these as binary (no CRLF conversion, no diffs)
+*.a binary
+*.so binary
+*.dll binary
+*.lib binary
+*.bin binary
+*.cbin binary
+*.exe binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.mp4 binary
+*.mov binary
+*.ico binary
