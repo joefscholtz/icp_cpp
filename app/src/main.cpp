@@ -9,9 +9,11 @@
 #include <future>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <nfd.h>
 #include <nfd.hpp>
 #include <optional>
+#include <thread>
 #include <vector>
 
 struct AppState {
@@ -32,6 +34,11 @@ struct AppState {
 
   std::future<ICPResult> icp_future;
   std::atomic<bool> is_running{false};
+  std::mutex viz_mutex;
+
+  std::vector<Eigen::Vector3d> viz_P;
+  std::vector<correspondence_t> viz_correspondences;
+  std::atomic<bool> has_new_viz_data{false};
 };
 
 void ICPSettingsCallback(AppState &state) {
@@ -40,7 +47,6 @@ void ICPSettingsCallback(AppState &state) {
 
   ImGui::Begin("ICP");
 
-  // File selection
   if (ImGui::Button("Select Meshes (Min 2)") && !state.is_running) {
     NFD_Init();
     const nfdpathset_t *pathSet;
@@ -82,17 +88,31 @@ void ICPSettingsCallback(AppState &state) {
   ImGui::Separator();
 
   if (state.is_running) {
-    // Simple animated "icon" using text
+    // Update Polyscope from the buffer
+    if (state.has_new_viz_data) {
+      std::lock_guard<std::mutex> lock(state.viz_mutex);
+      auto *pc = polyscope::registerPointCloud("Source Cloud", state.viz_P);
+
+      if (!state.viz_correspondences.empty()) {
+        std::vector<glm::vec3> vectors;
+        for (auto &corr : state.viz_correspondences) {
+          Eigen::Vector3d diff = state.point_clouds[1][corr.second] - state.viz_P[corr.first];
+          vectors.emplace_back((float)diff.x(), (float)diff.y(), (float)diff.z());
+        }
+        pc->addVectorQuantity("Matching Vectors", vectors);
+      }
+      state.has_new_viz_data = false;
+    }
+
+    // Loader Animation
     float t = (float)ImGui::GetTime();
     const char *frames[] = {"[ .     ]", "[ ..    ]", "[ ...   ]", "[  ...  ]", "[   ..  ]", "[    .  ]", "[     . ]"};
-    int frame_idx = (int)(t * 10.0f) % 7;
-    ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Running ICP %s", frames[frame_idx]);
+    ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Running ICP %s", frames[(int)(t * 10.0f) % 7]);
 
-    // Check if task finished
-    if (state.icp_future.wait_for(0s) == std::future_status::ready) {
+    if (state.icp_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       state.icp_res = state.icp_future.get();
-      auto P_curr = transform_vector_points(state.point_clouds[0], state.icp_res.T.block<3, 3>(0, 0), state.icp_res.T.block<3, 1>(0, 3));
-      polyscope::registerPointCloud("Source Cloud", P_curr);
+      auto P_final = transform_vector_points(state.point_clouds[0], state.icp_res.T.block<3, 3>(0, 0), state.icp_res.T.block<3, 1>(0, 3));
+      polyscope::registerPointCloud("Source Cloud", P_final);
       state.is_running = false;
     }
   } else {
@@ -102,10 +122,23 @@ void ICPSettingsCallback(AppState &state) {
       if (state.selectedMini == 0)
         state.minimization_fn = minimize_point_to_point_svd;
 
+      // Viz Callback
+      std::optional<VisualizationFunctionType> viz_callback = std::nullopt;
+      if (state.stop_at_iter) {
+        viz_callback = [&](const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &, std::vector<correspondence_t> &corr) {
+          {
+            std::lock_guard<std::mutex> lock(state.viz_mutex);
+            state.viz_P = P;
+            state.viz_correspondences = corr;
+            state.has_new_viz_data = true;
+          }
+          std::this_thread::sleep_for(500ms);
+        };
+      }
+
       state.is_running = true;
-      // Launch ICP in background thread
-      state.icp_future = std::async(std::launch::async, [&state]() {
-        return icp(state.point_clouds[0], state.point_clouds[1], state.correspondence_fn, state.minimization_fn, std::nullopt, std::nullopt,
+      state.icp_future = std::async(std::launch::async, [&state, viz_callback]() {
+        return icp(state.point_clouds[0], state.point_clouds[1], state.correspondence_fn, state.minimization_fn, viz_callback, std::nullopt,
                    state.icp_duration, state.icp_iterations);
       });
     }
@@ -121,13 +154,10 @@ void ICPSettingsCallback(AppState &state) {
 
 int main(int argc, char **argv) {
   AppState state;
-
   polyscope::init();
   polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
   polyscope::options::openImGuiWindowForUserCallback = false;
   polyscope::state::userCallback = [&state]() { ICPSettingsCallback(state); };
-
   polyscope::show();
-
   return 0;
 }
