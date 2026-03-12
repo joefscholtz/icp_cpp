@@ -25,6 +25,7 @@ struct AppState {
 
   std::vector<std::vector<Eigen::Vector3d>> point_clouds;
   std::vector<Eigen::Vector3d> points;
+  size_t current_pair_idx = 0;
 
   int icp_iterations = 10;
   bool stop_at_iter = false;
@@ -40,6 +41,12 @@ struct AppState {
   std::vector<Eigen::Vector3d> viz_P;
   std::vector<correspondence_t> viz_correspondences;
   std::atomic<bool> has_new_viz_data{false};
+
+  bool cumulative_icp = false;
+  std::vector<std::vector<Eigen::Vector3d>> viz_all_clouds;
+
+  Eigen::Matrix4d current_viz_T = Eigen::Matrix4d::Identity(); // The delta T from the current ICP iteration
+  std::vector<Eigen::Matrix4d> cloud_poses;                    // Store the "settled" pose of each cloud
 };
 
 void ICPSettingsCallback(AppState &state) {
@@ -85,6 +92,8 @@ void ICPSettingsCallback(AppState &state) {
   ImGui::Separator();
   ImGui::InputInt("Iterations", &state.icp_iterations);
 
+  ImGui::Checkbox("Cumulative (Scan-to-Map)", &state.cumulative_icp);
+
   ImGui::Checkbox("Stop at each iteration", &state.stop_at_iter);
   if (state.stop_at_iter) {
     ImGui::Indent();
@@ -99,18 +108,39 @@ void ICPSettingsCallback(AppState &state) {
   if (state.is_running) {
     if (state.has_new_viz_data) {
       std::lock_guard<std::mutex> lock(state.viz_mutex);
-      auto *pc = polyscope::registerPointCloud("Source Cloud", state.viz_P);
 
-      if (!state.viz_correspondences.empty()) {
-        std::vector<glm::vec3> vectors;
-        vectors.reserve(state.viz_correspondences.size());
-        for (auto &corr : state.viz_correspondences) {
-          Eigen::Vector3d diff = state.point_clouds[1][corr.second] - state.viz_P[corr.first];
-          vectors.emplace_back((float)diff.x(), (float)diff.y(), (float)diff.z());
+      for (size_t i = 0; i < state.point_clouds.size(); ++i) {
+        std::string cloudName = (i == 0) ? "Source Cloud" : "Target Cloud " + std::to_string(i);
+        auto *pc = polyscope::getPointCloud(cloudName);
+        if (!pc)
+          continue;
+
+        if (i < state.current_pair_idx) {
+          auto P_moved = transform_vector_points(state.point_clouds[i], state.current_viz_T.block<3, 3>(0, 0), state.current_viz_T.block<3, 1>(0, 3));
+          pc->updatePointPositions(P_moved);
+          pc->setPointColor({0.0f, 1.0f, 0.0f}); // Green
+
+        } else if (i == state.current_pair_idx) {
+          pc->updatePointPositions(state.viz_P);
+          pc->setPointColor({0.2f, 0.8f, 0.2f}); // Bright Green
+
+          if (!state.viz_correspondences.empty()) {
+            std::vector<glm::vec3> vectors;
+            for (auto &c : state.viz_correspondences) {
+              Eigen::Vector3d diff = state.point_clouds[i + 1][c.second] - state.viz_P[c.first];
+              vectors.emplace_back((float)diff.x(), (float)diff.y(), (float)diff.z());
+            }
+            auto *vQ = pc->addVectorQuantity("Alignment", vectors, polyscope::VectorType::AMBIENT);
+            vQ->setVectorColor({0.0f, 0.0f, 1.0f});
+            vQ->setVectorLengthScale(1.0, false);
+            vQ->setVectorRadius(0.0005, false);
+            vQ->setEnabled(true);
+          }
+        } else if (i == state.current_pair_idx + 1) {
+          pc->setPointColor({1.0f, 0.0f, 0.0f}); // Red (Target)
+        } else {
+          pc->setPointColor({0.5f, 0.5f, 0.5f}); // Grey (Pending)
         }
-        auto *vQuant = pc->addVectorQuantity("Matching Vectors", vectors, polyscope::VectorType::AMBIENT);
-        vQuant->setVectorColor({0.0f, 0.0f, 1.0f});
-        vQuant->setEnabled(true);
       }
       state.has_new_viz_data = false;
     }
@@ -121,37 +151,33 @@ void ICPSettingsCallback(AppState &state) {
 
     if (state.icp_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       state.icp_res = state.icp_future.get();
-      auto P_final = transform_vector_points(state.point_clouds[0], state.icp_res.T.block<3, 3>(0, 0), state.icp_res.T.block<3, 1>(0, 3));
-      polyscope::registerPointCloud("Source Cloud", P_final);
       state.is_running = false;
     }
   } else {
     if (ImGui::Button("Run ICP") && state.point_clouds.size() > 1) {
-      if (state.selectedCorr == 0)
-        state.correspondence_fn = correspondence_nn;
-      if (state.selectedMini == 0)
-        state.minimization_fn = minimize_point_to_point_svd;
+      state.selectedCorr == 0 ? state.correspondence_fn = correspondence_nn : nullptr;
+      state.selectedMini == 0 ? state.minimization_fn = minimize_point_to_point_svd : nullptr;
 
       std::optional<VisualizationFunctionType> viz_callback = std::nullopt;
       if (state.stop_at_iter) {
-        // capture viz_pause_ms by value to ensure the thread has the correct number
-        int pause_val = state.viz_pause_ms;
-        viz_callback = [&state, pause_val](const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &,
-                                           std::vector<correspondence_t> &corr) {
+        int p_ms = state.viz_pause_ms;
+        viz_callback = [&](const auto &P, const auto &, auto &corr, size_t pair_idx, const Eigen::Matrix4d &current_T) {
           {
             std::lock_guard<std::mutex> lock(state.viz_mutex);
             state.viz_P = P;
             state.viz_correspondences = corr;
+            state.current_pair_idx = pair_idx;
+            state.current_viz_T = current_T;
             state.has_new_viz_data = true;
           }
-          std::this_thread::sleep_for(std::chrono::milliseconds(pause_val));
+          std::this_thread::sleep_for(std::chrono::milliseconds(state.viz_pause_ms));
         };
       }
 
       state.is_running = true;
       state.icp_future = std::async(std::launch::async, [&state, viz_callback]() {
-        return icp(state.point_clouds[0], state.point_clouds[1], state.correspondence_fn, state.minimization_fn, viz_callback, std::nullopt,
-                   state.icp_duration, state.icp_iterations);
+        return frame_to_frame_icp(state.point_clouds, state.correspondence_fn, state.minimization_fn, viz_callback, std::nullopt, state.icp_duration,
+                                  state.icp_iterations);
       });
     }
   }
