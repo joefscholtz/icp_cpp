@@ -3,20 +3,24 @@
 #include "math_utils.hpp"
 #include "minimization.hpp"
 #include "time_utils.hpp"
+#include <cstddef>
 #include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <vector>
 
-using VisualizationFunctionType =
-    std::function<void(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, std::vector<correspondence_t> &correspondences,
-                       size_t current_pair_idx, const Eigen::Matrix4d &current_T)>;
+using VisualizationFunctionType = std::function<void(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q,
+                                                     std::vector<correspondence_t> &correspondences, size_t P_idx, size_t Q_idx)>;
 
 template <typename V>
 inline auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q, CorrespondenceFunctionType &correspondence_fn,
                 MinimizationFunctionType &minimization_fn, std::optional<V> visualization_fn, std::optional<const Eigen::Matrix4d> T0,
                 std::shared_ptr<ICPDuration> icp_duration, const size_t iterations) -> ICPResult {
+
+  // std::cout << "P.size(): " << P.size() << std::endl;
+  // std::cout << "Q.size(): " << Q.size() << std::endl;
 
   Eigen::Matrix4d T = T0.value_or(Eigen::Matrix4d::Identity());
   std::vector<Eigen::Vector3d> P_curr;
@@ -62,37 +66,31 @@ inline auto frame_to_frame_icp(std::vector<std::vector<Eigen::Vector3d>> &point_
                                bool cumulative = false) -> ICPResult {
 
   ICPResult curr_icp;
-  Eigen::Matrix4d global_T = T0.value_or(Eigen::Matrix4d::Identity());
-
-  std::vector<std::vector<Eigen::Vector3d>> current_clouds = point_clouds;
+  Eigen::Matrix4d T_ini = T0.value_or(Eigen::Matrix4d::Identity());
   std::vector<Eigen::Vector3d> target_map;
 
   for (size_t i = 0; i < point_clouds.size() - 1; i++) {
-    auto &P_source = current_clouds[i];
 
+    size_t P_idx = i + 1, Q_idx = i;
     if (cumulative) {
-      // Merge all previous clouds into one target map
       target_map.clear();
-      for (size_t j = 0; j <= i; ++j) {
-        target_map.insert(target_map.end(), current_clouds[j].begin(), current_clouds[j].end());
+      for (size_t j = 0; j <= Q_idx; ++j) {
+        target_map.insert(target_map.end(), point_clouds[j].begin(), point_clouds[j].end());
       }
     }
-    const std::vector<Eigen::Vector3d> &Q_target = cumulative ? target_map : current_clouds[i + 1];
+    const std::vector<Eigen::Vector3d> &Q_target = cumulative ? target_map : point_clouds[Q_idx];
 
-    auto wrapped_viz = [visualization_fn, i, curr_icp](const auto &p, const auto &q, auto &c) {
+    auto wrapped_viz = [visualization_fn, P_idx, Q_idx](const auto &p, const auto &q, auto &c) {
       if (visualization_fn)
-        (*visualization_fn)(p, q, c, i, curr_icp.T);
+        (*visualization_fn)(p, q, c, P_idx, Q_idx);
     };
 
-    curr_icp = icp(P_source, Q_target, correspondence_fn, minimization_fn, std::make_optional(wrapped_viz), Eigen::Matrix4d::Identity(), icp_duration,
-                   iterations);
+    curr_icp =
+        icp(point_clouds[P_idx], Q_target, correspondence_fn, minimization_fn, std::make_optional(wrapped_viz), T_ini, icp_duration, iterations);
 
-    // Update the transformation for the current cloud AND all previous clouds
-    for (size_t j = 0; j <= i; ++j) {
-      current_clouds[j] = transform_vector_points(current_clouds[j], curr_icp.T.block<3, 3>(0, 0), curr_icp.T.block<3, 1>(0, 3));
-    }
+    point_clouds[P_idx] = transform_vector_points(point_clouds[P_idx], curr_icp.T.block<3, 3>(0, 0), curr_icp.T.block<3, 1>(0, 3));
 
-    global_T = curr_icp.T * global_T;
+    T_ini = Eigen::Matrix4d::Identity();
   }
-  return {.T = global_T, .chi = curr_icp.chi};
+  return curr_icp;
 }
