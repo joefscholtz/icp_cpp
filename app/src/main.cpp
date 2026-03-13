@@ -86,9 +86,9 @@ void ICPSettingsCallback(AppState &state) {
 
           auto *pc = polyscope::registerPointCloud(name, state.points);
           if (i == 0)
-            pc->setPointColor({1.0f, 0.0f, 0.0f});
+            pc->setPointColor({1.0f, 0.0f, 0.0f}); // red
           else
-            pc->setPointColor({0.0f, 1.0f, 0.0f});
+            pc->setPointColor({0.0f, 1.0f, 0.0f}); // green
           pc->setMaterial("clay");
 
           NFD_PathSet_FreePath(path);
@@ -109,9 +109,9 @@ void ICPSettingsCallback(AppState &state) {
       for (size_t j = 0; j < state.point_clouds.size(); ++j) {
         auto *pc = polyscope::registerPointCloud(state.cloud_names[j], state.point_clouds[j]);
         if (j == 0)
-          pc->setPointColor({1.0f, 0.0f, 0.0f});
+          pc->setPointColor({1.0f, 0.0f, 0.0f}); // red
         else
-          pc->setPointColor({0.0f, 1.0f, 0.0f});
+          pc->setPointColor({0.0f, 1.0f, 0.0f}); // green
       }
     }
 
@@ -146,9 +146,9 @@ void ICPSettingsCallback(AppState &state) {
             for (size_t j = 0; j < state.point_clouds.size(); ++j) {
               auto *pc = polyscope::registerPointCloud(state.cloud_names[j], state.point_clouds[j]);
               if (j == 0)
-                pc->setPointColor({1.0f, 0.0f, 0.0f});
+                pc->setPointColor({1.0f, 0.0f, 0.0f}); // red
               else
-                pc->setPointColor({0.0f, 1.0f, 0.0f});
+                pc->setPointColor({0.0f, 1.0f, 0.0f}); // green
             }
           }
         }
@@ -189,10 +189,10 @@ void ICPSettingsCallback(AppState &state) {
 
         if (i < state.P_idx && i < state.Q_idx) {
           pc->updatePointPositions(state.point_clouds[i]);
-          pc->setPointColor({0.0f, 1.0f, 0.0f});
+          pc->setPointColor({0.0f, 1.0f, 0.0f}); // green
         } else if (i == state.P_idx) {
           pc->updatePointPositions(state.viz_P);
-          pc->setPointColor({0.2f, 0.8f, 0.2f});
+          pc->setPointColor({0.2f, 0.8f, 0.2f}); // pale green
 
           if (!state.viz_correspondences.empty()) {
             std::vector<glm::vec3> vectors;
@@ -207,9 +207,9 @@ void ICPSettingsCallback(AppState &state) {
             matching_vecs->setEnabled(true);
           }
         } else if (i == state.Q_idx) {
-          pc->setPointColor({1.0f, 0.0f, 0.0f});
+          pc->setPointColor({1.0f, 0.0f, 0.0f}); // red
         } else {
-          pc->setPointColor({0.5f, 0.5f, 0.5f});
+          pc->setPointColor({0.5f, 0.5f, 0.5f}); // grey
         }
       }
       state.has_new_viz_data = false;
