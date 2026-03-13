@@ -26,6 +26,7 @@ struct AppState {
   MinimizationFunctionType minimization_fn;
 
   std::vector<std::vector<Eigen::Vector3d>> point_clouds;
+  std::vector<std::string> cloud_names;
   std::vector<Eigen::Vector3d> points;
   size_t P_idx = 0;
   size_t Q_idx = 0;
@@ -53,7 +54,7 @@ void ICPSettingsCallback(AppState &state) {
   const char *corr_methods[] = {"Naive Nearest Neighbor (Brute Force)", "KD-Tree"};
   const char *min_methods[] = {"Point-to-Point (SVD)", "Point-to-Point (LS)", "Point-to-Plane (LS)", "Generalized ICP"};
 
-  ImGui::Begin("ICP");
+  ImGui::Begin("Point Cloud Management");
 
   if (ImGui::Button("Select Meshes (Min 2)") && !state.is_running) {
     NFD_Init();
@@ -66,18 +67,28 @@ void ICPSettingsCallback(AppState &state) {
       NFD_PathSet_GetCount(path_set, &count);
       if (count >= 2) {
         state.point_clouds.clear();
+        state.cloud_names.clear();
         for (nfdpathsetsize_t i = 0; i < count; ++i) {
           nfdu8char_t *path;
           NFD_PathSet_GetPath(path_set, i, &path);
+
+          std::string full_path(path);
+          size_t last_slash = full_path.find_last_of("/\\");
+          size_t last_dot = full_path.find_last_of(".");
+          std::string name = (last_slash == std::string::npos) ? full_path : full_path.substr(last_slash + 1);
+          if (last_dot != std::string::npos && last_dot > last_slash) {
+            name = name.substr(0, name.find_last_of("."));
+          }
+          state.cloud_names.push_back(name);
+
           state.points = loadMesh(path);
           state.point_clouds.push_back(state.points);
 
-          std::string cloud_name = "Point Cloud " + std::to_string(i);
-          auto *pc = polyscope::registerPointCloud(cloud_name, state.points);
+          auto *pc = polyscope::registerPointCloud(name, state.points);
           if (i == 0)
-            pc->setPointColor({1.0f, 0.0f, 0.0f}); // Red
+            pc->setPointColor({1.0f, 0.0f, 0.0f}); // red
           else
-            pc->setPointColor({0.0f, 1.0f, 0.0f}); // Green
+            pc->setPointColor({0.0f, 1.0f, 0.0f}); // green
           pc->setMaterial("clay");
 
           NFD_PathSet_FreePath(path);
@@ -88,6 +99,66 @@ void ICPSettingsCallback(AppState &state) {
     NFD_Quit();
   }
 
+  if (!state.point_clouds.empty() && !state.is_running) {
+    ImGui::SameLine();
+    if (ImGui::Button("Reverse Order")) {
+      std::reverse(state.point_clouds.begin(), state.point_clouds.end());
+      std::reverse(state.cloud_names.begin(), state.cloud_names.end());
+
+      // Update Polyscope colors/names
+      for (size_t j = 0; j < state.point_clouds.size(); ++j) {
+        auto *pc = polyscope::registerPointCloud(state.cloud_names[j], state.point_clouds[j]);
+        if (j == 0)
+          pc->setPointColor({1.0f, 0.0f, 0.0f}); // red
+        else
+          pc->setPointColor({0.0f, 1.0f, 0.0f}); // green
+      }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Drag and Drop to Reorder:");
+    for (int i = 0; i < (int)state.point_clouds.size(); i++) {
+      std::string label = std::to_string(i) + ": " + state.cloud_names[i];
+      ImGui::Selectable(label.c_str());
+
+      if (ImGui::BeginDragDropSource()) {
+        ImGui::SetDragDropPayload("DND_CLOUD", &i, sizeof(int));
+        ImGui::Text("Moving %s", state.cloud_names[i].c_str());
+        ImGui::EndDragDropSource();
+      }
+
+      if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload("DND_CLOUD")) {
+          int source_idx = *(const int *)payload->Data;
+          if (source_idx != i) {
+            auto it_pc = state.point_clouds.begin();
+            auto it_name = state.cloud_names.begin();
+
+            auto pc_val = state.point_clouds[source_idx];
+            auto name_val = state.cloud_names[source_idx];
+
+            state.point_clouds.erase(it_pc + source_idx);
+            state.cloud_names.erase(it_name + source_idx);
+
+            state.point_clouds.insert(state.point_clouds.begin() + i, pc_val);
+            state.cloud_names.insert(state.cloud_names.begin() + i, name_val);
+
+            for (size_t j = 0; j < state.point_clouds.size(); ++j) {
+              auto *pc = polyscope::registerPointCloud(state.cloud_names[j], state.point_clouds[j]);
+              if (j == 0)
+                pc->setPointColor({1.0f, 0.0f, 0.0f}); // red
+              else
+                pc->setPointColor({0.0f, 1.0f, 0.0f}); // green
+            }
+          }
+        }
+        ImGui::EndDragDropTarget();
+      }
+    }
+  }
+  ImGui::End();
+
+  ImGui::Begin("ICP");
   ImGui::Text("ICP Configuration");
   ImGui::Separator();
   ImGui::InputInt("Iterations", &state.icp_iterations);
@@ -110,8 +181,7 @@ void ICPSettingsCallback(AppState &state) {
       std::lock_guard<std::mutex> lock(state.viz_mutex);
 
       for (size_t i = 0; i < state.point_clouds.size(); ++i) {
-        std::string cloud_name = "Point Cloud " + std::to_string(i);
-        auto *pc = polyscope::getPointCloud(cloud_name);
+        auto *pc = polyscope::getPointCloud(state.cloud_names[i]);
         if (!pc)
           continue;
 
@@ -153,8 +223,7 @@ void ICPSettingsCallback(AppState &state) {
       state.icp_res = state.icp_future.get();
       state.is_running = false;
       for (size_t i = 0; i < state.point_clouds.size(); ++i) {
-        std::string cloud_name = "Point Cloud " + std::to_string(i);
-        auto *pc = polyscope::getPointCloud(cloud_name);
+        auto *pc = polyscope::getPointCloud(state.cloud_names[i]);
         if (pc)
           pc->removeQuantity("Matching Vectors");
         pc->updatePointPositions(state.point_clouds[i]);
