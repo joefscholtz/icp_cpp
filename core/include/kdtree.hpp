@@ -50,9 +50,9 @@ private:
 
 class KDTree {
 public:
-  KDTree(std::vector<Eigen::Vector3d> &point_cloud) { make_tree(point_cloud); }
+  KDTree(const std::vector<Eigen::Vector3d> &point_cloud) { make_tree(point_cloud); }
 
-  auto find_nearest_idx(Eigen::Vector3d &point) -> size_t {
+  auto find_nearest_idx(const Eigen::Vector3d &point) -> size_t {
     auto query_node = std::make_shared<KDNode>(std::make_shared<Eigen::Vector3d>(point), 0);
     std::shared_ptr<KDNode> best_node = nullptr;
     double best_dist = std::numeric_limits<double>::max();
@@ -114,7 +114,7 @@ private:
     }
   }
 
-  inline void make_tree(std::vector<Eigen::Vector3d> &point_cloud) {
+  inline void make_tree(const std::vector<Eigen::Vector3d> &point_cloud) {
     if (point_cloud.empty())
       return;
 
