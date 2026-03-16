@@ -2,7 +2,6 @@
 #include "kdtree.hpp"
 #include "math_utils.hpp"
 #include "time_utils.hpp"
-#include <Eigen/Dense>
 #include <functional>
 #include <limits>
 #include <nanoflann.hpp>
@@ -71,24 +70,6 @@ inline auto correspondence_kdtree(const std::vector<Eigen::Vector3d> &P, const s
   }
   return correspondences;
 }
-
-// Define the adaptor for nanoflann to read std::vector<Eigen::Vector3d> directly
-struct VectorAdaptor {
-  const std::vector<Eigen::Vector3d> &points;
-  VectorAdaptor(const std::vector<Eigen::Vector3d> &pts) : points(pts) {}
-
-  inline size_t kdtree_get_point_count() const { return points.size(); }
-
-  inline double kdtree_get_pt(const size_t idx, const size_t dim) const {
-    if (dim == 0)
-      return points[idx].x();
-    if (dim == 1)
-      return points[idx].y();
-    return points[idx].z();
-  }
-
-  template <class BBOX> bool kdtree_get_bbox(BBOX &) const { return false; }
-};
 
 inline auto correspondence_kdtree_nanoflann(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q,
                                             std::shared_ptr<std::chrono::duration<double>> duration_ptr, std::optional<double> max_dist)
