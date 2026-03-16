@@ -1,6 +1,6 @@
 build/
 .polyscope.ini
-.imgui.ini
+imgui.ini
 compile_commands.json
 .cache
 **.tar**
