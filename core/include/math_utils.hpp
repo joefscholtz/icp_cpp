@@ -138,3 +138,51 @@ inline auto estimate_normals(const std::vector<Eigen::Vector3d> &points, int k =
   }
   return normals;
 }
+
+inline auto calculate_cloud_extent(const std::vector<Eigen::Vector3d> &points) -> double {
+  if (points.empty())
+    return 0.0;
+  Eigen::Vector3d min_p = points[0];
+  Eigen::Vector3d max_p = points[0];
+  for (const auto &p : points) {
+    min_p = min_p.cwiseMin(p);
+    max_p = max_p.cwiseMax(p);
+  }
+  return (max_p - min_p).norm(); // Diagonal of the AABB
+}
+
+struct VoxelKey {
+  long x, y, z;
+  bool operator<(const VoxelKey &other) const {
+    if (x != other.x)
+      return x < other.x;
+    if (y != other.y)
+      return y < other.y;
+    return z < other.z;
+  }
+};
+
+struct VoxelData {
+  Eigen::Vector3d sum = Eigen::Vector3d::Zero();
+  size_t count = 0;
+};
+
+inline auto voxel_downsample(const std::vector<Eigen::Vector3d> &points, double voxel_size) -> std::vector<Eigen::Vector3d> {
+  if (voxel_size <= 0.0)
+    return points;
+
+  std::map<VoxelKey, VoxelData> grid;
+  for (const auto &p : points) {
+    VoxelKey key{static_cast<long>(std::floor(p.x() / voxel_size)), static_cast<long>(std::floor(p.y() / voxel_size)),
+                 static_cast<long>(std::floor(p.z() / voxel_size))};
+    grid[key].sum += p;
+    grid[key].count++;
+  }
+
+  std::vector<Eigen::Vector3d> downsampled;
+  downsampled.reserve(grid.size());
+  for (auto const &[key, data] : grid) {
+    downsampled.push_back(data.sum / static_cast<double>(data.count));
+  }
+  return downsampled;
+}

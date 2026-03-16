@@ -57,11 +57,12 @@ struct AppState {
   size_t Q_idx = 0;
 
   int icp_iterations = 100;
+  int num_scales = 1;
   bool stop_at_iter = true;
   bool start_transform_with_last_estimate = false;
   int viz_pause_ms = 100;
 
-  CorrespondenceType selected_corr = CorrespondenceType::Naive;
+  CorrespondenceType selected_corr = CorrespondenceType::KDTreeNanoflann;
   MinimizationType selected_min = MinimizationType::PointToPointSVD;
 
   std::future<ICPResult> icp_future;
@@ -188,6 +189,8 @@ void ICPSettingsCallback(AppState &state) {
   ImGui::Text("ICP Configuration");
   ImGui::Separator();
   ImGui::InputInt("Iterations", &state.icp_iterations);
+
+  ImGui::SliderInt("Multi-Scale Downsamplez\nLevels", &state.num_scales, 1, 500);
 
   ImGui::Checkbox("Cumulative (Scan-to-Map)", &state.cumulative_icp);
 
@@ -325,7 +328,8 @@ void ICPSettingsCallback(AppState &state) {
         state.is_running = true;
         state.icp_future = std::async(std::launch::async, [&state, viz_callback]() {
           return frame_to_frame_icp(state.point_clouds, state.correspondence_fn, state.minimization_fn, viz_callback, std::nullopt,
-                                    state.start_transform_with_last_estimate, state.icp_duration, state.icp_iterations, state.cumulative_icp);
+                                    state.start_transform_with_last_estimate, state.icp_duration, state.icp_iterations, state.num_scales,
+                                    state.cumulative_icp);
         });
       }
     }
