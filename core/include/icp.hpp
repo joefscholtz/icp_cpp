@@ -23,6 +23,8 @@ inline auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::
   // std::cout << "Q.size(): " << Q.size() << std::endl;
 
   Eigen::Matrix4d T = T0.value_or(Eigen::Matrix4d::Identity());
+  std::vector<Eigen::Vector3d> normals_P = estimate_normals(P);
+  std::vector<Eigen::Vector3d> normals_Q = estimate_normals(Q);
   std::vector<Eigen::Vector3d> P_curr;
   std::vector<correspondence_t> correspondences;
   ICPResult min_result;
@@ -37,7 +39,7 @@ inline auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::
   for (size_t i = 0; i < iterations; i++) {
     P_curr = transform_vector_points(P, T.block<3, 3>(0, 0), T.block<3, 1>(0, 3));
     correspondences = correspondence_fn(P_curr, Q, corr_duration_ptr, std::nullopt);
-    min_result = minimization_fn(P_curr, Q, correspondences, min_duration_ptr);
+    min_result = minimization_fn(P_curr, Q, normals_P, normals_Q, correspondences, true, min_duration_ptr);
 
     if (tracking_time) {
       icp_duration->correspondence_duration += *corr_duration_ptr;

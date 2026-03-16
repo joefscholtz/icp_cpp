@@ -40,7 +40,8 @@ const std::vector<CorrespondenceOption> correspondence_registry = {
 
 const std::vector<MinimizationOption> minimization_registry = {
     {MinimizationType::PointToPointSVD, "Point-to-Point (SVD)", minimize_point_to_point_svd},
-    {MinimizationType::PointToPointLS, "Point-to-Point (Non Linear Least Squares)", minimize_point_to_point_ls}};
+    {MinimizationType::PointToPointLS, "Point-to-Point (Non Linear Least Squares)", minimize_point_to_point_ls},
+    {MinimizationType::PointToPlaneLS, "Point-to-Plane (Non Linear Least Squares)", minimize_point_to_plane_ls}};
 
 struct AppState {
   std::shared_ptr<ICPDuration> icp_duration = std::make_shared<ICPDuration>();
