@@ -64,8 +64,8 @@ inline auto icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::
 
 inline auto frame_to_frame_icp(std::vector<std::vector<Eigen::Vector3d>> &point_clouds, CorrespondenceFunctionType &correspondence_fn,
                                MinimizationFunctionType &minimization_fn, std::optional<VisualizationFunctionType> visualization_fn,
-                               std::optional<const Eigen::Matrix4d> T0, std::shared_ptr<ICPDuration> icp_duration, const size_t iterations,
-                               bool cumulative = false) -> ICPResult {
+                               std::optional<const Eigen::Matrix4d> T0, bool start_transform_with_last_estimate,
+                               std::shared_ptr<ICPDuration> icp_duration, const size_t iterations, bool cumulative = false) -> ICPResult {
 
   ICPResult curr_icp;
   Eigen::Matrix4d T_ini = T0.value_or(Eigen::Matrix4d::Identity());
@@ -92,7 +92,7 @@ inline auto frame_to_frame_icp(std::vector<std::vector<Eigen::Vector3d>> &point_
 
     point_clouds[P_idx] = transform_vector_points(point_clouds[P_idx], curr_icp.T.block<3, 3>(0, 0), curr_icp.T.block<3, 1>(0, 3));
 
-    T_ini = Eigen::Matrix4d::Identity();
+    T_ini = start_transform_with_last_estimate ? curr_icp.T : T0.value_or(Eigen::Matrix4d::Identity());
   }
   return curr_icp;
 }

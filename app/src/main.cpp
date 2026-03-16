@@ -56,9 +56,10 @@ struct AppState {
   size_t P_idx = 0;
   size_t Q_idx = 0;
 
-  int icp_iterations = 10;
-  bool stop_at_iter = false;
-  int viz_pause_ms = 500;
+  int icp_iterations = 100;
+  bool stop_at_iter = true;
+  bool start_transform_with_last_estimate = false;
+  int viz_pause_ms = 100;
 
   CorrespondenceType selected_corr = CorrespondenceType::Naive;
   MinimizationType selected_min = MinimizationType::PointToPointSVD;
@@ -196,6 +197,7 @@ void ICPSettingsCallback(AppState &state) {
     ImGui::InputInt("Pause (ms)", &state.viz_pause_ms);
     ImGui::Unindent();
   }
+  ImGui::Checkbox("Use last frame transform iteration \nas first estimation for the next", &state.start_transform_with_last_estimate);
 
   std::string current_corr_label = "None";
   for (const auto &opt : correspondence_registry) {
@@ -323,7 +325,7 @@ void ICPSettingsCallback(AppState &state) {
         state.is_running = true;
         state.icp_future = std::async(std::launch::async, [&state, viz_callback]() {
           return frame_to_frame_icp(state.point_clouds, state.correspondence_fn, state.minimization_fn, viz_callback, std::nullopt,
-                                    state.icp_duration, state.icp_iterations, state.cumulative_icp);
+                                    state.start_transform_with_last_estimate, state.icp_duration, state.icp_iterations, state.cumulative_icp);
         });
       }
     }
