@@ -5,6 +5,7 @@
     "happly",
     "tinyobjloader",
     "nativefiledialog-extended",
-    "nanoflann"
+    "nanoflann",
+    "ceres"
   ]
 }
