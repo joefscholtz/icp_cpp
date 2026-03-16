@@ -4,6 +4,8 @@
     "eigen3",
     "happly",
     "tinyobjloader",
-    "nativefiledialog-extended"
+    "nativefiledialog-extended",
+    "nanoflann",
+    "ceres"
   ]
 }

@@ -18,6 +18,32 @@
 #include <thread>
 #include <vector>
 
+enum class CorrespondenceType { Naive, KDTree, KDTreeNanoflann };
+enum class MinimizationType { PointToPointSVD, PointToPointLS, PointToPlaneLS, GeneralizedICP };
+
+struct CorrespondenceOption {
+  CorrespondenceType type;
+  std::string name;
+  CorrespondenceFunctionType function;
+};
+
+struct MinimizationOption {
+  MinimizationType type;
+  std::string name;
+  MinimizationFunctionType function;
+};
+
+const std::vector<CorrespondenceOption> correspondence_registry = {
+    {CorrespondenceType::Naive, "Naive Nearest Neighbor (Brute Force)", correspondence_nn},
+    {CorrespondenceType::KDTree, "KDTree", correspondence_kdtree},
+    {CorrespondenceType::KDTreeNanoflann, "KDTree (using nanoflann)", correspondence_kdtree_nanoflann}};
+
+const std::vector<MinimizationOption> minimization_registry = {
+    {MinimizationType::PointToPointSVD, "Point-to-Point (SVD)", minimize_point_to_point_svd},
+    {MinimizationType::PointToPointLS, "Point-to-Point (Non Linear Least Squares)", minimize_point_to_point_ls},
+    {MinimizationType::PointToPlaneLS, "Point-to-Plane (Non Linear Least Squares)", minimize_point_to_plane_ls},
+    {MinimizationType::GeneralizedICP, "Generalized ICP", minimize_generalized_icp}};
+
 struct AppState {
   std::shared_ptr<ICPDuration> icp_duration = std::make_shared<ICPDuration>();
   ICPResult icp_res;
@@ -31,12 +57,15 @@ struct AppState {
   size_t P_idx = 0;
   size_t Q_idx = 0;
 
-  int icp_iterations = 10;
-  bool stop_at_iter = false;
-  int viz_pause_ms = 500;
+  int icp_iterations = 100;
+  int num_scales = 1;
+  bool stop_at_iter = true;
+  bool start_transform_with_last_estimate = false;
+  int viz_pause_ms = 100;
+  bool cumulative_icp = false;
 
-  int selected_corr = 0;
-  int selected_min = 0;
+  CorrespondenceType selected_corr = CorrespondenceType::KDTreeNanoflann;
+  MinimizationType selected_min = MinimizationType::PointToPointSVD;
 
   std::future<ICPResult> icp_future;
   std::atomic<bool> is_running{false};
@@ -47,7 +76,7 @@ struct AppState {
   std::vector<correspondence_t> viz_correspondences;
   std::atomic<bool> has_new_viz_data{false};
 
-  bool cumulative_icp = false;
+  std::atomic<bool> stop_requested{false};
 };
 
 void ICPSettingsCallback(AppState &state) {
@@ -63,6 +92,13 @@ void ICPSettingsCallback(AppState &state) {
     nfdresult_t ndf_result = NFD_OpenDialogMultiple(&path_set, filters, 1, NULL);
 
     if (ndf_result == NFD_OKAY) {
+      for (const auto &name : state.cloud_names) {
+        polyscope::removePointCloud(name, false); // false = don't error if not found
+      }
+      state.point_clouds.clear();
+      state.cloud_names.clear();
+      state.points.clear();
+
       nfdpathsetsize_t count;
       NFD_PathSet_GetCount(path_set, &count);
       if (count >= 2) {
@@ -163,6 +199,8 @@ void ICPSettingsCallback(AppState &state) {
   ImGui::Separator();
   ImGui::InputInt("Iterations", &state.icp_iterations);
 
+  ImGui::SliderInt("Multi-Scale Downsample\nLevels", &state.num_scales, 1, 500);
+
   ImGui::Checkbox("Cumulative (Scan-to-Map)", &state.cumulative_icp);
 
   ImGui::Checkbox("Stop at each iteration", &state.stop_at_iter);
@@ -171,9 +209,43 @@ void ICPSettingsCallback(AppState &state) {
     ImGui::InputInt("Pause (ms)", &state.viz_pause_ms);
     ImGui::Unindent();
   }
+  ImGui::Checkbox("Use last frame transform iteration \nas first estimation for the next", &state.start_transform_with_last_estimate);
 
-  ImGui::Combo("Correspondence", &state.selected_corr, corr_methods, IM_ARRAYSIZE(corr_methods));
-  ImGui::Combo("Minimization", &state.selected_min, min_methods, IM_ARRAYSIZE(min_methods));
+  std::string current_corr_label = "None";
+  for (const auto &opt : correspondence_registry) {
+    if (opt.type == state.selected_corr)
+      current_corr_label = opt.name;
+  }
+
+  if (ImGui::BeginCombo("Correspondence", current_corr_label.c_str())) {
+    for (const auto &opt : correspondence_registry) {
+      bool is_selected = (state.selected_corr == opt.type);
+      if (ImGui::Selectable(opt.name.c_str(), is_selected)) {
+        state.selected_corr = opt.type;
+      }
+      if (is_selected)
+        ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+
+  std::string current_min_label = "None";
+  for (const auto &opt : minimization_registry) {
+    if (opt.type == state.selected_min)
+      current_min_label = opt.name;
+  }
+
+  if (ImGui::BeginCombo("Minimization", current_min_label.c_str())) {
+    for (const auto &opt : minimization_registry) {
+      bool is_selected = (state.selected_min == opt.type);
+      if (ImGui::Selectable(opt.name.c_str(), is_selected)) {
+        state.selected_min = opt.type;
+      }
+      if (is_selected)
+        ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
   ImGui::Separator();
 
   if (state.is_running) {
@@ -214,6 +286,11 @@ void ICPSettingsCallback(AppState &state) {
       }
       state.has_new_viz_data = false;
     }
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.1f, 0.1f, 1.0f));
+    if (ImGui::Button("STOP ICP", ImVec2(-1, 0))) {
+      state.stop_requested = true;
+    }
+    ImGui::PopStyleColor();
 
     float t = (float)ImGui::GetTime();
     const char *frames[] = {"[ .     ]", "[ ..    ]", "[ ...   ]", "[  ...  ]", "[   ..  ]", "[    .  ]", "[     . ]"};
@@ -222,6 +299,7 @@ void ICPSettingsCallback(AppState &state) {
     if (state.icp_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       state.icp_res = state.icp_future.get();
       state.is_running = false;
+      state.stop_requested = false; // Reset for next run
       for (size_t i = 0; i < state.point_clouds.size(); ++i) {
         auto *pc = polyscope::getPointCloud(state.cloud_names[i]);
         if (pc)
@@ -231,30 +309,45 @@ void ICPSettingsCallback(AppState &state) {
     }
   } else {
     if (ImGui::Button("Run ICP") && state.point_clouds.size() > 1) {
-      state.selected_corr == 0 ? state.correspondence_fn = correspondence_nn : nullptr;
-      state.selected_min == 0 ? state.minimization_fn = minimize_point_to_point_svd : nullptr;
-
-      std::optional<VisualizationFunctionType> viz_callback = std::nullopt;
-      if (state.stop_at_iter) {
-        viz_callback = [&](const auto &P, const auto &Q, auto &corr, size_t P_idx, size_t Q_idx) {
-          {
-            std::lock_guard<std::mutex> lock(state.viz_mutex);
-            state.viz_P = P;
-            state.viz_Q = Q;
-            state.viz_correspondences = corr;
-            state.P_idx = P_idx;
-            state.Q_idx = Q_idx;
-            state.has_new_viz_data = true;
-          }
-          std::this_thread::sleep_for(std::chrono::milliseconds(state.viz_pause_ms));
-        };
+      bool corr_was_selected{false}, min_was_selected{false};
+      for (const auto &opt : correspondence_registry) {
+        if (opt.type == state.selected_corr) {
+          state.correspondence_fn = opt.function;
+          corr_was_selected = true;
+        }
+      }
+      for (const auto &opt : minimization_registry) {
+        if (opt.type == state.selected_min) {
+          state.minimization_fn = opt.function;
+          min_was_selected = true;
+        }
       }
 
-      state.is_running = true;
-      state.icp_future = std::async(std::launch::async, [&state, viz_callback]() {
-        return frame_to_frame_icp(state.point_clouds, state.correspondence_fn, state.minimization_fn, viz_callback, std::nullopt, state.icp_duration,
-                                  state.icp_iterations, state.cumulative_icp);
-      });
+      if (corr_was_selected && min_was_selected) {
+        std::optional<VisualizationFunctionType> viz_callback = std::nullopt;
+        if (state.stop_at_iter) {
+          viz_callback = [&](const auto &P, const auto &Q, auto &corr, size_t P_idx, size_t Q_idx) {
+            {
+              std::lock_guard<std::mutex> lock(state.viz_mutex);
+              state.viz_P = P;
+              state.viz_Q = Q;
+              state.viz_correspondences = corr;
+              state.P_idx = P_idx;
+              state.Q_idx = Q_idx;
+              state.has_new_viz_data = true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(state.viz_pause_ms));
+          };
+        }
+
+        state.is_running = true;
+        state.stop_requested = false;
+        state.icp_future = std::async(std::launch::async, [&state, viz_callback]() {
+          return frame_to_frame_icp(state.point_clouds, state.correspondence_fn, state.minimization_fn, viz_callback, std::nullopt,
+                                    state.start_transform_with_last_estimate, state.icp_duration, state.icp_iterations, state.num_scales,
+                                    state.cumulative_icp, state.stop_requested);
+        });
+      }
     }
   }
 
