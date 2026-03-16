@@ -39,7 +39,8 @@ const std::vector<CorrespondenceOption> correspondence_registry = {
     {CorrespondenceType::KDTreeNanoflann, "KDTree (using nanoflann)", correspondence_kdtree_nanoflann}};
 
 const std::vector<MinimizationOption> minimization_registry = {
-    {MinimizationType::PointToPointSVD, "Point-to-Point (SVD)", minimize_point_to_point_svd}};
+    {MinimizationType::PointToPointSVD, "Point-to-Point (SVD)", minimize_point_to_point_svd},
+    {MinimizationType::PointToPointLS, "Point-to-Point (Non Linear Least Squares)", minimize_point_to_point_ls}};
 
 struct AppState {
   std::shared_ptr<ICPDuration> icp_duration = std::make_shared<ICPDuration>();
