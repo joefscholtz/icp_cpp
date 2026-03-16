@@ -19,7 +19,7 @@
 #include <vector>
 
 enum class CorrespondenceType { Naive, KDTree, KDTreeNanoflann };
-enum class MinimizationType { PointToPointSVD, PointToPointLS, PointToPlaneLS, Generalized };
+enum class MinimizationType { PointToPointSVD, PointToPointLS, PointToPlaneLS, GeneralizedICP };
 
 struct CorrespondenceOption {
   CorrespondenceType type;
@@ -41,7 +41,8 @@ const std::vector<CorrespondenceOption> correspondence_registry = {
 const std::vector<MinimizationOption> minimization_registry = {
     {MinimizationType::PointToPointSVD, "Point-to-Point (SVD)", minimize_point_to_point_svd},
     {MinimizationType::PointToPointLS, "Point-to-Point (Non Linear Least Squares)", minimize_point_to_point_ls},
-    {MinimizationType::PointToPlaneLS, "Point-to-Plane (Non Linear Least Squares)", minimize_point_to_plane_ls}};
+    {MinimizationType::PointToPlaneLS, "Point-to-Plane (Non Linear Least Squares)", minimize_point_to_plane_ls},
+    {MinimizationType::GeneralizedICP, "Generalized ICP", minimize_generalized_icp}};
 
 struct AppState {
   std::shared_ptr<ICPDuration> icp_duration = std::make_shared<ICPDuration>();
@@ -57,11 +58,13 @@ struct AppState {
   size_t Q_idx = 0;
 
   int icp_iterations = 100;
+  int num_scales = 1;
   bool stop_at_iter = true;
   bool start_transform_with_last_estimate = false;
   int viz_pause_ms = 100;
+  bool cumulative_icp = false;
 
-  CorrespondenceType selected_corr = CorrespondenceType::Naive;
+  CorrespondenceType selected_corr = CorrespondenceType::KDTreeNanoflann;
   MinimizationType selected_min = MinimizationType::PointToPointSVD;
 
   std::future<ICPResult> icp_future;
@@ -73,7 +76,7 @@ struct AppState {
   std::vector<correspondence_t> viz_correspondences;
   std::atomic<bool> has_new_viz_data{false};
 
-  bool cumulative_icp = false;
+  std::atomic<bool> stop_requested{false};
 };
 
 void ICPSettingsCallback(AppState &state) {
@@ -89,6 +92,13 @@ void ICPSettingsCallback(AppState &state) {
     nfdresult_t ndf_result = NFD_OpenDialogMultiple(&path_set, filters, 1, NULL);
 
     if (ndf_result == NFD_OKAY) {
+      for (const auto &name : state.cloud_names) {
+        polyscope::removePointCloud(name, false); // false = don't error if not found
+      }
+      state.point_clouds.clear();
+      state.cloud_names.clear();
+      state.points.clear();
+
       nfdpathsetsize_t count;
       NFD_PathSet_GetCount(path_set, &count);
       if (count >= 2) {
@@ -189,6 +199,8 @@ void ICPSettingsCallback(AppState &state) {
   ImGui::Separator();
   ImGui::InputInt("Iterations", &state.icp_iterations);
 
+  ImGui::SliderInt("Multi-Scale Downsample\nLevels", &state.num_scales, 1, 500);
+
   ImGui::Checkbox("Cumulative (Scan-to-Map)", &state.cumulative_icp);
 
   ImGui::Checkbox("Stop at each iteration", &state.stop_at_iter);
@@ -274,6 +286,11 @@ void ICPSettingsCallback(AppState &state) {
       }
       state.has_new_viz_data = false;
     }
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.1f, 0.1f, 1.0f));
+    if (ImGui::Button("STOP ICP", ImVec2(-1, 0))) {
+      state.stop_requested = true;
+    }
+    ImGui::PopStyleColor();
 
     float t = (float)ImGui::GetTime();
     const char *frames[] = {"[ .     ]", "[ ..    ]", "[ ...   ]", "[  ...  ]", "[   ..  ]", "[    .  ]", "[     . ]"};
@@ -282,6 +299,7 @@ void ICPSettingsCallback(AppState &state) {
     if (state.icp_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       state.icp_res = state.icp_future.get();
       state.is_running = false;
+      state.stop_requested = false; // Reset for next run
       for (size_t i = 0; i < state.point_clouds.size(); ++i) {
         auto *pc = polyscope::getPointCloud(state.cloud_names[i]);
         if (pc)
@@ -323,9 +341,11 @@ void ICPSettingsCallback(AppState &state) {
         }
 
         state.is_running = true;
+        state.stop_requested = false;
         state.icp_future = std::async(std::launch::async, [&state, viz_callback]() {
           return frame_to_frame_icp(state.point_clouds, state.correspondence_fn, state.minimization_fn, viz_callback, std::nullopt,
-                                    state.start_transform_with_last_estimate, state.icp_duration, state.icp_iterations, state.cumulative_icp);
+                                    state.start_transform_with_last_estimate, state.icp_duration, state.icp_iterations, state.num_scales,
+                                    state.cumulative_icp, state.stop_requested);
         });
       }
     }

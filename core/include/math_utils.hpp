@@ -89,6 +89,53 @@ struct PointToPlaneError {
   const std::optional<Eigen::Vector3d> n_p_;
 };
 
+struct GICPError {
+  GICPError(Eigen::Vector3d p, Eigen::Vector3d q, Eigen::Matrix3d Cp, Eigen::Matrix3d Cq) : p_(p), q_(q), Cp_(Cp), Cq_(Cq) {}
+
+  template <typename T> bool operator()(const T *const angle_axis, const T *const translation, T *residual) const {
+    T p[3] = {T(p_.x()), T(p_.y()), T(p_.z())};
+    T p_rotated[3];
+    ceres::AngleAxisRotatePoint(angle_axis, p, p_rotated);
+
+    Eigen::Matrix<T, 3, 1> p_prime(p_rotated[0] + translation[0], p_rotated[1] + translation[1], p_rotated[2] + translation[2]);
+    Eigen::Matrix<T, 3, 1> q_vec(T(q_.x()), T(q_.y()), T(q_.z()));
+    Eigen::Matrix<T, 3, 1> diff = p_prime - q_vec;
+
+    // Rotate Covariance Cp
+    T R[9];
+    ceres::AngleAxisToRotationMatrix(angle_axis, R);
+    Eigen::Matrix<T, 3, 3> R_mat;
+    R_mat << R[0], R[3], R[6], R[1], R[4], R[7], R[2], R[5], R[8]; // Ceres is column-major
+
+    Eigen::Matrix<T, 3, 3> Cp_T = Cp_.cast<T>();
+    Eigen::Matrix<T, 3, 3> Cq_T = Cq_.cast<T>();
+    Eigen::Matrix<T, 3, 3> M = Cq_T + R_mat * Cp_T * R_mat.transpose();
+
+    // Mahalanobis distance: diff^T * M^-1 * diff
+    // We use the inverse of the sum of covariances
+    Eigen::Matrix<T, 3, 3> M_inv = M.inverse();
+
+    // Ceres expects a vector of residuals whose square sum is minimized
+    // So we take the "square root" of the Mahalanobis distance via LLT
+    Eigen::LLT<Eigen::Matrix<T, 3, 3>> llt(M_inv);
+    Eigen::Matrix<T, 3, 3> L = llt.matrixL().transpose();
+
+    Eigen::Matrix<T, 3, 1> weighted_diff = L * diff;
+    residual[0] = weighted_diff[0];
+    residual[1] = weighted_diff[1];
+    residual[2] = weighted_diff[2];
+
+    return true;
+  }
+
+  static ceres::CostFunction *Create(const Eigen::Vector3d &p, const Eigen::Vector3d &q, const Eigen::Matrix3d &Cp, const Eigen::Matrix3d &Cq) {
+    return new ceres::AutoDiffCostFunction<GICPError, 3, 3, 3>(new GICPError(p, q, Cp, Cq));
+  }
+
+  const Eigen::Vector3d p_, q_;
+  const Eigen::Matrix3d Cp_, Cq_;
+};
+
 inline auto transform_vector_points(const std::vector<Eigen::Vector3d> &P, Eigen::Matrix3d R, Eigen::Vector3d t) -> std::vector<Eigen::Vector3d> {
   size_t N = P.size();
   std::vector<Eigen::Vector3d> P_transformed(N);
@@ -137,4 +184,88 @@ inline auto estimate_normals(const std::vector<Eigen::Vector3d> &points, int k =
       normals[i] *= -1.0;
   }
   return normals;
+}
+
+inline auto calculate_cloud_extent(const std::vector<Eigen::Vector3d> &points) -> double {
+  if (points.empty())
+    return 0.0;
+  Eigen::Vector3d min_p = points[0];
+  Eigen::Vector3d max_p = points[0];
+  for (const auto &p : points) {
+    min_p = min_p.cwiseMin(p);
+    max_p = max_p.cwiseMax(p);
+  }
+  return (max_p - min_p).norm(); // Diagonal of the AABB
+}
+
+struct VoxelKey {
+  long x, y, z;
+  bool operator<(const VoxelKey &other) const {
+    if (x != other.x)
+      return x < other.x;
+    if (y != other.y)
+      return y < other.y;
+    return z < other.z;
+  }
+};
+
+struct VoxelData {
+  Eigen::Vector3d sum = Eigen::Vector3d::Zero();
+  size_t count = 0;
+};
+
+inline auto voxel_downsample(const std::vector<Eigen::Vector3d> &points, double voxel_size) -> std::vector<Eigen::Vector3d> {
+  if (voxel_size <= 0.0)
+    return points;
+
+  std::map<VoxelKey, VoxelData> grid;
+  for (const auto &p : points) {
+    VoxelKey key{static_cast<long>(std::floor(p.x() / voxel_size)), static_cast<long>(std::floor(p.y() / voxel_size)),
+                 static_cast<long>(std::floor(p.z() / voxel_size))};
+    grid[key].sum += p;
+    grid[key].count++;
+  }
+
+  std::vector<Eigen::Vector3d> downsampled;
+  downsampled.reserve(grid.size());
+  for (auto const &[key, data] : grid) {
+    downsampled.push_back(data.sum / static_cast<double>(data.count));
+  }
+  return downsampled;
+}
+
+inline auto estimate_covariances(const std::vector<Eigen::Vector3d> &points, const std::vector<Eigen::Vector3d> & /*normals*/, double epsilon = 0.001,
+                                 int k = 15) -> std::vector<Eigen::Matrix3d> {
+  std::vector<Eigen::Matrix3d> covariances(points.size());
+
+  VectorAdaptor adaptor(points);
+  using my_kd_tree_t = nanoflann::KDTreeSingleIndexAdaptor<nanoflann::L2_Simple_Adaptor<double, VectorAdaptor>, VectorAdaptor, 3>;
+  my_kd_tree_t index(3, adaptor, nanoflann::KDTreeSingleIndexAdaptorParams(10));
+  index.buildIndex();
+
+  for (size_t i = 0; i < points.size(); ++i) {
+    std::vector<size_t> ret_indices(k);
+    std::vector<double> out_dist_sq(k);
+    nanoflann::KNNResultSet<double> resultSet(k);
+    resultSet.init(ret_indices.data(), out_dist_sq.data());
+    index.findNeighbors(resultSet, points[i].data(), nanoflann::SearchParameters());
+
+    Eigen::Vector3d mean(0, 0, 0);
+    for (size_t idx : ret_indices)
+      mean += points[idx];
+    mean /= static_cast<double>(k);
+
+    Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
+    for (size_t idx : ret_indices) {
+      Eigen::Vector3d diff = points[idx] - mean;
+      cov += diff * diff.transpose();
+    }
+    cov /= static_cast<double>(k);
+
+    // Regularization: SVD to find principal axes and squash the normal direction
+    Eigen::JacobiSVD<Eigen::Matrix3d> svd(cov, Eigen::ComputeFullU);
+    Eigen::Vector3d values(1.0, 1.0, epsilon); // Surface model
+    covariances[i] = svd.matrixU() * values.asDiagonal() * svd.matrixU().transpose();
+  }
+  return covariances;
 }

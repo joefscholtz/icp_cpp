@@ -156,3 +156,66 @@ inline auto minimize_point_to_plane_ls(const std::vector<Eigen::Vector3d> &P, co
     *duration_ptr = timer.get_duration();
   return {.T = T, .chi = summary.final_cost / correspondences.size()};
 }
+
+inline auto minimize_generalized_icp(const std::vector<Eigen::Vector3d> &P, const std::vector<Eigen::Vector3d> &Q,
+                                     const std::vector<Eigen::Vector3d> &normals_P, const std::vector<Eigen::Vector3d> &normals_Q,
+                                     const std::vector<correspondence_t> &correspondences, bool /*symmetric*/,
+                                     std::shared_ptr<std::chrono::duration<double>> duration_ptr) -> ICPResult {
+  Timer timer;
+
+  if (correspondences.empty()) {
+    return ICPResult();
+  }
+
+  // 1. Estimate Covariances for both point clouds
+  // We use the regularized version (Plane-to-Plane) for GICP stability
+  auto Cp = estimate_covariances(P, normals_P);
+  auto Cq = estimate_covariances(Q, normals_Q);
+
+  // 2. Initialize Ceres optimization parameters
+  double angle_axis[3] = {0.0, 0.0, 0.0};
+  double translation[3] = {0.0, 0.0, 0.0};
+
+  ceres::Problem problem;
+
+  // 3. Add GICP Residual blocks
+  for (const auto &corr : correspondences) {
+    size_t i = corr.first;
+    size_t j = corr.second;
+
+    ceres::CostFunction *cost_function = GICPError::Create(P[i], Q[j], Cp[i], Cq[j]);
+
+    // HuberLoss handles outliers (points that don't belong to the same surface)
+    problem.AddResidualBlock(cost_function, new ceres::HuberLoss(0.1), angle_axis, translation);
+  }
+
+  // 4. Configure and run the solver
+  ceres::Solver::Options options;
+  options.linear_solver_type = ceres::DENSE_QR;
+  options.max_num_iterations = 50;
+  options.num_threads = 8; // Optimize based on your CPU
+
+  ceres::Solver::Summary summary;
+  ceres::Solve(options, &problem, &summary);
+
+  // 5. Convert Angle-Axis and Translation back to Matrix4d
+  Eigen::Vector3d aa(angle_axis[0], angle_axis[1], angle_axis[2]);
+  double angle = aa.norm();
+  Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
+  if (angle > 1e-12) {
+    R = Eigen::AngleAxisd(angle, aa.normalized()).toRotationMatrix();
+  }
+
+  Eigen::Vector3d t(translation[0], translation[1], translation[2]);
+
+  Eigen::Matrix4d T = Eigen::Matrix4d::Identity();
+  T.block<3, 3>(0, 0) = R;
+  T.block<3, 1>(0, 3) = t;
+
+  if (duration_ptr != nullptr) {
+    *duration_ptr = timer.get_duration();
+  }
+
+  // The residual error (chi) in GICP is normalized by the number of correspondences
+  return {.T = T, .chi = summary.final_cost / static_cast<double>(correspondences.size())};
+}
