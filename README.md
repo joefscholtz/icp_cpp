@@ -2,6 +2,13 @@
 
 A modular, high-performance Iterative Closest Point (ICP) framework implemented in C++20. This project decouples the correspondence search from the error minimization step, allowing for easy benchmarking of various modern ICP variants.
 
+## Preview
+
+Demo with the Stanford Bunny 🐇 meshes present in the `data` directory using KD-Tree correspondence, Generalized ICP, Multi-Scale Downsampling and Cumulative Scan option:
+
+![icp_cpp demo](./assets/icp_cpp_demo.gif)
+
+
 ## Features & Algorithms
 
 The implementation is designed to be **header-only** and independent of the GUI, making it easy to integrate the math core into other robotics projects.
