@@ -6,7 +6,7 @@ A modular, high-performance Iterative Closest Point (ICP) framework implemented 
 
 Demo with the Stanford Bunny 🐇 meshes present in the `data` directory using KD-Tree correspondence, Generalized ICP, Multi-Scale Downsampling and Cumulative Scan option:
 
-![icp_cpp demo](assets/icp_cpp_demo.gif)
+![icp_cpp demo](./assets/icp_cpp_demo.gif)
 
 
 ## Features & Algorithms
